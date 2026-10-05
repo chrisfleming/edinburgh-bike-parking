@@ -1,0 +1,17 @@
+{
+  "description": "Council IDs to exclude from the 'missing from OSM' list. Add entries when you have verified a spot is already in OSM (e.g. just outside the match threshold), the council record is a duplicate, or the location no longer exists.",
+  "excluded": {
+    "523": "Chris visited here on 3/10/2026, can't see any sign of bike parking",
+    "1153": "Chris visited here on 3/10/2026, can't see any sign of bike parking",
+    "1388": "Chris visited here on 3/10/2026, can't see any sign of bike parking",
+    "397": "Chris visited here on 3/10/2026, can't see any sign of bike parking",
+    "155": "James reported that this parkinging isn't present 3/10/2026",
+    "70": "James reported that this parkinging isn't present 3/10/2026",
+    "225": "Chris removed this from OSM some time ago as it no longer exists.",
+    "301": "James reported that he couldn't find this 5/10/2026",
+    "1481": "James reported that he couldn't find this 5/10/2026",
+    "938": "Bjorn reported that he couldn't find this 5/10/2026",
+    "271": "Bjorn reported that he couldn't find this 5/10/2026",
+    "1455": "Bjorn reported that he couldn't find this 5/10/2026"
+  }
+}

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edinburgh Bike Parking — OSM vs Council</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+    <style>
+      /* Override flex layout: fixed map height, table fills rest */
+      #map {
+        flex: none;
+        height: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Edinburgh Bike Parking — OSM vs Council</h1>
+      <nav>
+        <a href="index.html">Find Parking</a>
+        <a href="compare.html" class="active">OSM Compare</a>
+      </nav>
+    </header>
+
+    <div id="layer-controls">
+      <label class="layer-toggle">
+        <input type="checkbox" id="tog-council" checked />
+        <span class="swatch" style="background: #e74c3c"></span>
+        Council only (<span id="cnt-council">…</span>)
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" id="tog-osm" checked />
+        <span class="swatch" style="background: #3498db"></span>
+        OSM only (<span id="cnt-osm">…</span>)
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" id="tog-matched" checked />
+        <span class="swatch" style="background: #2ecc71"></span>
+        Matched (<span id="cnt-matched">…</span>)
+      </label>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="table-section">
+      <div class="tabs">
+        <div class="tab active" data-panel="panel-council">
+          Council only <span id="tab-cnt-council"></span>
+        </div>
+        <div class="tab" data-panel="panel-osm">
+          OSM only <span id="tab-cnt-osm"></span>
+        </div>
+        <div class="tab" data-panel="panel-matched">
+          Matched <span id="tab-cnt-matched"></span>
+        </div>
+      </div>
+
+      <div id="panel-council" class="panel active">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Council ID</th>
+              <th>Capacity</th>
+              <th>Covered</th>
+              <th>Access</th>
+              <th>Operator</th>
+              <th>Nearest OSM (m)</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-council"></tbody>
+        </table>
+      </div>
+
+      <div id="panel-osm" class="panel">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>OSM ID</th>
+              <th>Parking type</th>
+              <th>Capacity</th>
+              <th>Covered</th>
+              <th>Access</th>
+              <th>Nearest council (m)</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-osm"></tbody>
+        </table>
+      </div>
+
+      <div id="panel-matched" class="panel">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Council ID</th>
+              <th>OSM ID</th>
+              <th>Dist (m)</th>
+              <th>Council cap.</th>
+              <th>OSM cap.</th>
+              <th>Diff</th>
+              <th>Council cov.</th>
+              <th>OSM cov.</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-matched"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="js/shared.js"></script>
+    <script src="js/popups.js"></script>
+    <script>
+      "use strict";
+
+      const COUNCIL_ATTRIBUTION =
+        'Council data: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a> ' +
+        'Copyright City of Edinburgh Council, contains Ordnance Survey data © Crown copyright and database right 2026';
+
+      const map = BM.initMap("map", 55.953, -3.188, 12, COUNCIL_ATTRIBUTION);
+
+      const LAYER_DEF = {
+        council: { color: "#e74c3c", group: null },
+        osm: { color: "#3498db", group: null },
+        matched: { color: "#2ecc71", group: null },
+      };
+
+      function flyTo(feature) {
+        const [lon, lat] = feature.geometry.coordinates;
+        map.setView([lat, lon], 17);
+      }
+
+      function makeGeoLayer(features, color, popupFn, radius = 7) {
+        const group = BM.makeCluster(color);
+        L.geoJSON(
+          { type: "FeatureCollection", features },
+          {
+            pointToLayer: (f, latlng) => BM.circleMarker(latlng, color, radius),
+            onEachFeature: (f, layer) =>
+              layer.bindPopup(popupFn(f.properties), { maxWidth: 320 }),
+          },
+        ).addTo(group);
+        return group;
+      }
+
+      // Toggle controls
+      ["council", "osm", "matched"].forEach((key) => {
+        document
+          .getElementById(`tog-${key}`)
+          .addEventListener("change", (e) => {
+            const g = LAYER_DEF[key].group;
+            if (g) e.target.checked ? map.addLayer(g) : map.removeLayer(g);
+          });
+      });
+
+      // Tabs
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll(".tab")
+            .forEach((t) => t.classList.remove("active"));
+          document
+            .querySelectorAll(".panel")
+            .forEach((p) => p.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById(tab.dataset.panel).classList.add("active");
+        });
+      });
+
+      // Table builders
+      function v(val) {
+        return val !== null && val !== undefined && val !== "" ? val : "—";
+      }
+
+      function appendRow(tbodyId, cells, feature) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = cells.map((c) => `<td>${c}</td>`).join("");
+        tr.addEventListener("click", () => flyTo(feature));
+        document.getElementById(tbodyId).appendChild(tr);
+      }
+
+      function buildCouncilTable(features) {
+        const n = features.length;
+        document.getElementById("cnt-council").textContent = n;
+        document.getElementById("tab-cnt-council").textContent = `(${n})`;
+        features.forEach((f) => {
+          const p = f.properties;
+          appendRow(
+            "tbody-council",
+            [
+              v(p.OBJECTID),
+              v(p.capacity),
+              v(p.covered),
+              v(p.access),
+              v(p.operator),
+              v(p.nearest_osm_dist_m),
+            ],
+            f,
+          );
+        });
+      }
+
+      function buildOsmTable(features) {
+        const n = features.length;
+        document.getElementById("cnt-osm").textContent = n;
+        document.getElementById("tab-cnt-osm").textContent = `(${n})`;
+        features.forEach((f) => {
+          const p = f.properties;
+          const link = p.osm_url
+            ? `<a href="${p.osm_url}" target="_blank" rel="noopener">${p.osm_id}</a>`
+            : v(p.osm_id);
+          appendRow(
+            "tbody-osm",
+            [
+              link,
+              v(p.bicycle_parking),
+              v(p.capacity),
+              v(p.covered),
+              v(p.access),
+              v(p.nearest_council_dist_m),
+            ],
+            f,
+          );
+        });
+      }
+
+      function buildMatchedTable(features) {
+        const n = features.length;
+        document.getElementById("cnt-matched").textContent = n;
+        document.getElementById("tab-cnt-matched").textContent = `(${n})`;
+        features.forEach((f) => {
+          const p = f.properties;
+          const link = p.osm_url
+            ? `<a href="${p.osm_url}" target="_blank" rel="noopener">${p.osm_id}</a>`
+            : v(p.osm_id);
+          const cdiff = p.capacity_diff_osm_minus_council;
+          const diff =
+            cdiff === null
+              ? "—"
+              : cdiff > 0
+                ? `<span class="diff-pos">+${cdiff}</span>`
+                : cdiff < 0
+                  ? `<span class="diff-neg">${cdiff}</span>`
+                  : "0";
+          const cov = p.covered_disagrees ? "warn-cell" : "";
+          appendRow(
+            "tbody-matched",
+            [
+              v(p.council_id),
+              link,
+              v(p.match_dist_m),
+              v(p.council_capacity),
+              v(p.osm_capacity),
+              diff,
+              `<span class="${cov}">${v(p.council_covered)}</span>`,
+              `<span class="${cov}">${v(p.osm_covered)}</span>`,
+            ],
+            f,
+          );
+        });
+      }
+
+      // Load data
+      Promise.all([
+        BM.fetchGeoJSON("data/council_only.geojson"),
+        BM.fetchGeoJSON("data/osm_only.geojson"),
+        BM.fetchGeoJSON("data/matched.geojson"),
+      ])
+        .then(([councilData, osmData, matchedData]) => {
+          LAYER_DEF.council.group = makeGeoLayer(
+            councilData.features,
+            "#e74c3c",
+            BP.councilOnly,
+            8,
+          );
+          LAYER_DEF.osm.group = makeGeoLayer(
+            osmData.features,
+            "#3498db",
+            BP.osmOnly,
+            7,
+          );
+          LAYER_DEF.matched.group = makeGeoLayer(
+            matchedData.features,
+            "#2ecc71",
+            BP.matched,
+            6,
+          );
+
+          Object.values(LAYER_DEF).forEach((l) => map.addLayer(l.group));
+
+          buildCouncilTable(councilData.features);
+          buildOsmTable(osmData.features);
+          buildMatchedTable(matchedData.features);
+        })
+        .catch((err) => {
+          console.error("Failed to load data:", err);
+          document.querySelector("#table-section").insertAdjacentHTML(
+            "afterbegin",
+            `<p style="padding:12px;color:#c0392b">
+      Failed to load data: ${err.message}<br>
+      Make sure you opened this page via <code>./serve.sh</code>
+    </p>`,
+          );
+        });
+    </script>
+  </body>
+</html>

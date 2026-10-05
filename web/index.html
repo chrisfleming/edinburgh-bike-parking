@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edinburgh Bike Parking Finder</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Edinburgh Bike Parking</h1>
+      <nav>
+        <a href="index.html" class="active">Find Parking</a>
+        <a href="compare.html">OSM Compare</a>
+      </nav>
+    </header>
+
+    <div id="filter-bar">
+      <div class="filter-group">
+        <label for="f-covered">Covered:</label>
+        <select id="f-covered">
+          <option value="all">All</option>
+          <option value="yes">Covered only</option>
+          <option value="no">Uncovered only</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-type">Type:</label>
+        <select id="f-type">
+          <option value="all">All types</option>
+          <option value="stands">Stands</option>
+          <option value="secure">Lockers &amp; sheds</option>
+          <option value="rack">Racks &amp; wall mounts</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>
+          <input type="checkbox" id="f-cargo" />
+          Cargo-friendly only
+        </label>
+      </div>
+      <div class="filter-group">
+        <label for="f-access">Access:</label>
+        <select id="f-access">
+          <option value="public">Public</option>
+          <option value="restricted">Public + restricted</option>
+          <option value="all">All (incl. private)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="status-bar">Loading…</div>
+    <div id="map"></div>
+
+    <div id="legend">
+      <h4>Covered status</h4>
+      <div class="legend-row">
+        <span class="legend-dot" style="background: #1abc9c"></span> Covered
+      </div>
+      <div class="legend-row">
+        <span class="legend-dot" style="background: #3498db"></span> Not covered
+      </div>
+      <div class="legend-row">
+        <span class="legend-dot" style="background: #95a5a6"></span> Unknown
+      </div>
+      <div class="legend-row">
+        <span class="legend-diamond" style="background: #e67e22"></span>
+        Cargo-friendly
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="js/shared.js"></script>
+    <script src="js/popups.js"></script>
+    <script>
+      "use strict";
+
+      const COLORS = {
+        covered: "#1abc9c",
+        uncovered: "#3498db",
+        unknown: "#95a5a6",
+        cargo: "#e67e22",
+      };
+
+      function markerColor(p) {
+        if (p.cargo_friendly) return COLORS.cargo;
+        if (p.covered === "yes") return COLORS.covered;
+        if (p.covered === "no") return COLORS.uncovered;
+        return COLORS.unknown;
+      }
+
+      const map = BM.initMap("map", 55.953, -3.188, 13);
+      let allFeatures = [];
+      let clusterGroup = null;
+
+      function filterState() {
+        return {
+          covered: document.getElementById("f-covered").value,
+          type: document.getElementById("f-type").value,
+          cargoFriendly: document.getElementById("f-cargo").checked,
+          access: document.getElementById("f-access").value,
+        };
+      }
+
+      function featureMatches(p, s) {
+        if (s.covered !== "all" && p.covered !== s.covered) return false;
+        if (s.type !== "all" && p.type_group !== s.type) return false;
+        if (s.cargoFriendly && !p.cargo_friendly) return false;
+        if (s.access === "public" && p.access_category !== "public")
+          return false;
+        if (s.access === "restricted" && p.access_category === "private")
+          return false;
+        return true;
+      }
+
+      function rebuild() {
+        const s = filterState();
+        if (clusterGroup) map.removeLayer(clusterGroup);
+
+        const filtered = allFeatures.filter((f) =>
+          featureMatches(f.properties, s),
+        );
+
+        clusterGroup = BM.makeCluster("#2c3e50");
+
+        L.geoJSON(
+          { type: "FeatureCollection", features: filtered },
+          {
+            pointToLayer(f, latlng) {
+              const p = f.properties;
+              const color = markerColor(p);
+              return p.cargo_friendly
+                ? BM.cargoMarker(latlng, color)
+                : BM.circleMarker(latlng, color);
+            },
+            onEachFeature(f, layer) {
+              layer.bindPopup(BP.publicParking(f.properties), {
+                maxWidth: 280,
+              });
+            },
+          },
+        ).addTo(clusterGroup);
+
+        map.addLayer(clusterGroup);
+
+        document.getElementById("status-bar").textContent =
+          `Showing ${filtered.length.toLocaleString()} of ${allFeatures.length.toLocaleString()} locations`;
+      }
+
+      ["f-covered", "f-type", "f-cargo", "f-access"].forEach((id) => {
+        document.getElementById(id).addEventListener("change", rebuild);
+      });
+
+      BM.fetchGeoJSON("data/public_parking.geojson")
+        .then((data) => {
+          allFeatures = data.features;
+          rebuild();
+        })
+        .catch((err) => {
+          document.getElementById("status-bar").textContent =
+            `Error: ${err.message} — make sure you opened this via ./serve.sh`;
+          console.error(err);
+        });
+    </script>
+  </body>
+</html>
