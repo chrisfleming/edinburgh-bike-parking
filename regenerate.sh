@@ -9,11 +9,11 @@ echo ""
 echo "==> Preparing web data files"
 python3 scripts/generate_web.py
 
-echo ""
-echo "==> Building GeoPackage for QGIS"
-ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/council_only.geojson -nln council_only -nlt POINT
-ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/osm_only.geojson -update -append -nln osm_only -nlt POINT
-ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/matched.geojson -update -append -nln matched -nlt POINT
+#echo ""
+#echo "==> Building GeoPackage for QGIS"
+#ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/council_only.geojson -nln council_only -nlt POINT
+#ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/osm_only.geojson -update -append -nln osm_only -nlt POINT
+#ogr2ogr -f GPKG output/bike_parking_comparison.gpkg output/matched.geojson -update -append -nln matched -nlt POINT
 
 echo ""
 echo "Done."
