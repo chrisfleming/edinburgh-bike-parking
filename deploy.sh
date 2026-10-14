@@ -46,4 +46,4 @@ bash regenerate.sh
 
 echo ""
 echo "==> Deploying web/ to Cloudflare Pages project: $CF_PROJECT_NAME"
-npx wrangler pages deploy web/ --project-name="$CF_PROJECT_NAME"
+npx wrangler pages deploy web/ --project-name="$CF_PROJECT_NAME" --commit-dirty=true
