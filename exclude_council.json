@@ -17,6 +17,8 @@
     "1469": "06/10/2026 - Bjorn reported these don't exist. Removed when Leith Walk was redone and not replaced",
     "835": "06/10/2026 - Bjorn reported these don't exist. Removed when Leith Walk was redone and not replaced",
     "755": "06/10/2026 - Bjorn reported these don't exist. Removed when Leith Walk was redone and not replaced",
-    "390": "06/10/2026 - Chris checked and this does match OSM but the OSM node (2762267515) is in the correct place"
+    "390": "06/10/2026 - Chris checked and this does match OSM but the OSM node (2762267515) is in the correct place",
+    "1342": "07/10/2026 - Chris checked and this does match OSM, but the OSM node (10915663936) is in the correct place",
+    "877": "07/10/2026 - Chris checked and this does match OSM, but the OSM node (6033031935) is in the correct place"
   }
 }
