@@ -1,0 +1,10 @@
+[Unit]
+Description=Edinburgh bike parking — fetch, regenerate, deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=chrisfl
+WorkingDirectory=/home/chrisfl/projects/edinburgh-bike-parking
+ExecStart=/bin/bash -c 'git pull && before=$(cat web/data/*.geojson | sha256sum) && bash update_data_and_regenerate.sh && after=$(cat web/data/*.geojson | sha256sum) && [ "$before" != "$after" ] && bash deploy.sh'

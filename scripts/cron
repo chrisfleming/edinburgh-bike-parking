@@ -1,5 +1,5 @@
 SHELL=/bin/bash
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=/usr/local/bin:/usr/bin:/bin:/home/chrisfl/.asdf/shims/
 
 # Edinburgh bike parking — pull, fetch, regenerate, deploy if changed (4x daily)
-0 */6 * * * root cd /path/to/osm_bike_parking_vs_council && git pull && before=$(cat web/data/*.geojson | sha256sum) && bash update_data_and_regenerate.sh && after=$(cat web/data/*.geojson | sha256sum) && [ "$before" != "$after" ] && bash deploy.sh >> /var/log/osm-bike-parking.log 2>&1
+0 */6 * * * chrisfl cd /home/chrisfl/projects/edinburgh-bike-parking/ && git pull && before=$(cat web/data/*.geojson | sha256sum) && bash update_data_and_regenerate.sh && after=$(cat web/data/*.geojson | sha256sum) && [ "$before" != "$after" ] && bash deploy.sh >> /var/log/processing/osm-bike-parking.log 2>&1
