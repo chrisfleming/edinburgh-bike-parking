@@ -16,7 +16,8 @@ INPUT   = ROOT / 'input'
 OUTPUT  = ROOT / 'output'
 OUTPUT.mkdir(exist_ok=True)
 
-THRESHOLD    = 10  # metres — features within this distance are considered "the same"
+THRESHOLD        = 10  # metres — proximity matching threshold
+CEC_REF_THRESHOLD = 30  # metres — ref:GB:cec tag matching threshold
 EXCLUDE_FILE = ROOT / 'exclude_council.json'
 
 # Geometry helpers 
@@ -95,21 +96,60 @@ council_feats = council['features']
 osm_pts    = [(centroid(f['geometry']), f) for f in osm_feats]
 council_pts = [(f['geometry']['coordinates'], f) for f in council_feats]
 
-# Spatial matching 
+# Spatial matching
+
+# --- Pass 1: ref:GB:cec tag matching ---
+# Build council lookup by OBJECTID for ref:GB:cec lookups
+council_by_obj_id = {
+    f['properties']['OBJECTID']: (coords, f)
+    for coords, f in council_pts
+}
+
+cec_ref_matched = []       # (c_feat, o_feat, dist)
+matched_council_ids = set()
+matched_osm_ids = set()
+
+for o_coord, o_feat in osm_pts:
+    tags = osm_tags(o_feat)
+    cec_ref_str = tags.get('ref:GB:cec', '') or tags.get('cec:ref', '')
+    if not cec_ref_str:
+        continue
+    try:
+        cec_ref_id = int(str(cec_ref_str).strip())
+    except (ValueError, TypeError):
+        continue
+    if cec_ref_id in matched_council_ids:
+        continue
+    osm_id = o_feat['properties']['osm_id']
+    if osm_id in matched_osm_ids:
+        continue
+    entry = council_by_obj_id.get(cec_ref_id)
+    if not entry:
+        continue
+    c_coord, c_feat = entry
+    d = haversine(o_coord[0], o_coord[1], c_coord[0], c_coord[1])
+    if d <= CEC_REF_THRESHOLD:
+        cec_ref_matched.append((c_feat, o_feat, d))
+        matched_council_ids.add(cec_ref_id)
+        matched_osm_ids.add(osm_id)
+
+# --- Pass 2: proximity matching on remaining unmatched features ---
+avail_council_pts = [(c, f) for c, f in council_pts if f['properties']['OBJECTID'] not in matched_council_ids]
+avail_osm_pts     = [(c, f) for c, f in osm_pts     if f['properties']['osm_id']  not in matched_osm_ids]
 
 council_matched, council_only = [], []
-for c_coord, c_feat in council_pts:
+for c_coord, c_feat in avail_council_pts:
     best_dist, best_osm = float('inf'), None
-    for o_coord, o_feat in osm_pts:
+    for o_coord, o_feat in avail_osm_pts:
         d = haversine(c_coord[0], c_coord[1], o_coord[0], o_coord[1])
         if d < best_dist:
             best_dist, best_osm = d, o_feat
     (council_matched if best_dist <= THRESHOLD else council_only).append((c_feat, best_osm, best_dist))
 
 osm_matched, osm_only = [], []
-for o_coord, o_feat in osm_pts:
+for o_coord, o_feat in avail_osm_pts:
     best_dist, best_c = float('inf'), None
-    for c_coord, c_feat in council_pts:
+    for c_coord, c_feat in avail_council_pts:
         d = haversine(o_coord[0], o_coord[1], c_coord[0], c_coord[1])
         if d < best_dist:
             best_dist, best_c = d, c_feat
@@ -152,20 +192,27 @@ for o_feat, nearest_c, nearest_dist in osm_only:
 (OUTPUT / 'osm_only.geojson').write_text(
     json.dumps({'type': 'FeatureCollection', 'features': o_only_features}))
 
-# matched.geojson
+# matched.geojson — combine cec:ref and proximity matches
+all_matched_pairs = (
+    [(c, o, d, 'ref:GB:cec') for c, o, d in cec_ref_matched] +
+    [(c, o, d, 'proximity')  for c, o, d in council_matched]
+)
+
 matched_features, cap_diffs, covered_diffs_count = [], [], 0
-for c_feat, o_feat, dist in council_matched:
-    tags   = osm_tags(o_feat)
-    cdiff  = capacity_diff(c_feat, o_feat)
+for c_feat, o_feat, dist, method in all_matched_pairs:
+    tags    = osm_tags(o_feat)
+    cdiff   = capacity_diff(c_feat, o_feat)
     covdiff = covered_diff(c_feat, o_feat)
     if cdiff is not None:
         cap_diffs.append(cdiff)
     if covdiff:
         covered_diffs_count += 1
     p = {
+        'match_method':                   method,
         'match_dist_m':                   round(dist, 1),
         'council_id':                     c_feat['properties'].get('OBJECTID', ''),
         'osm_id':                         o_feat['properties'].get('osm_id', ''),
+        'osm_type':                       o_feat['properties'].get('osm_type', ''),
         'council_capacity':               c_feat['properties'].get('capacity', ''),
         'osm_capacity':                   tags.get('capacity', ''),
         'capacity_diff_osm_minus_council': cdiff,
@@ -180,9 +227,9 @@ for c_feat, o_feat, dist in council_matched:
 (OUTPUT / 'matched.geojson').write_text(
     json.dumps({'type': 'FeatureCollection', 'features': matched_features}))
 
-# Summary report 
+# Summary report
 
-total_matched  = len(council_matched)
+total_matched  = len(cec_ref_matched) + len(council_matched)
 cap_comparable = len(cap_diffs)
 cap_agree      = sum(1 for d in cap_diffs if d == 0)
 cap_osm_higher = sum(1 for d in cap_diffs if d > 0)
@@ -193,7 +240,8 @@ n_remaining    = len(c_only_features)
 
 lines = [
     f"Edinburgh Bike Parking: OSM vs Council Comparison",
-    f"Threshold for 'same location': {THRESHOLD} m",
+    f"Proximity threshold:  {THRESHOLD} m",
+    f"ref:GB:cec threshold: {CEC_REF_THRESHOLD} m",
     f"",
     f"Dataset sizes:",
     f"  Council:  {len(council_feats)} features",
@@ -202,7 +250,9 @@ lines = [
     f"{sum(1 for f in osm_feats if f['geometry']['type']!='Point')} polygons)",
     f"",
     f"Spatial matching results:",
-    f"  Council features matched to OSM:   {len(council_matched):4d}  ({100*len(council_matched)/len(council_feats):.1f}%)",
+    f"  Matched via ref:GB:cec tag:        {len(cec_ref_matched):4d}",
+    f"  Matched via proximity:             {len(council_matched):4d}",
+    f"  Council features matched to OSM:   {total_matched:4d}  ({100*total_matched/len(council_feats):.1f}%)",
     f"  Council features NOT in OSM:       {len(council_only):4d}  ({100*len(council_only)/len(council_feats):.1f}%)",
     f"    of which excluded:               {n_excluded}",
     f"    remaining to investigate:        {n_remaining}  → output/council_only.geojson",

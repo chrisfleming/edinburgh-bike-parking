@@ -23,6 +23,32 @@
         flex: none;
         height: 420px;
       }
+      .data-table th {
+        cursor: pointer;
+        user-select: none;
+      }
+      .data-table th::after {
+        content: ' ⇅';
+        opacity: 0.3;
+        font-size: 0.8em;
+      }
+      .data-table th.sort-asc::after {
+        content: ' ▲';
+        opacity: 1;
+      }
+      .data-table th.sort-desc::after {
+        content: ' ▼';
+        opacity: 1;
+      }
+      .match-cec-ref {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: #856404;
+      }
     </style>
   </head>
   <body>
@@ -106,6 +132,7 @@
               <th>Council ID</th>
               <th>OSM ID</th>
               <th>Dist (m)</th>
+              <th>Method</th>
               <th>Council cap.</th>
               <th>OSM cap.</th>
               <th>Diff</th>
@@ -191,10 +218,62 @@
         document.getElementById(tbodyId).appendChild(tr);
       }
 
+      // Sorting
+      const COUNCIL_SORT_KEYS = ["OBJECTID", "capacity", "covered", "access", "operator", "nearest_osm_dist_m"];
+      const OSM_SORT_KEYS = ["osm_id", "bicycle_parking", "capacity", "covered", "access", "nearest_council_dist_m"];
+      const MATCHED_SORT_KEYS = ["council_id", "osm_id", "match_dist_m", "match_method", "council_capacity", "osm_capacity", "capacity_diff_osm_minus_council", "council_covered", "osm_covered"];
+
+      const sortState = {
+        council: { col: -1, asc: true },
+        osm: { col: -1, asc: true },
+        matched: { col: -1, asc: true },
+      };
+
+      function sortedFeatures(features, propKey, asc) {
+        return [...features].sort((a, b) => {
+          const va = a.properties[propKey];
+          const vb = b.properties[propKey];
+          const aNull = va === null || va === undefined || va === "";
+          const bNull = vb === null || vb === undefined || vb === "";
+          if (aNull && bNull) return 0;
+          if (aNull) return 1;
+          if (bNull) return -1;
+          const cmp =
+            typeof va === "number" && typeof vb === "number"
+              ? va - vb
+              : String(va).localeCompare(String(vb), undefined, { numeric: true });
+          return asc ? cmp : -cmp;
+        });
+      }
+
+      function makeSortable(panelId, tbodyId, sortKeys, renderFn) {
+        const thead = document.querySelector(`#${panelId} thead`);
+        const tableKey = panelId.replace("panel-", "");
+        thead.querySelectorAll("th").forEach((th, i) => {
+          th.addEventListener("click", () => {
+            const state = sortState[tableKey];
+            state.asc = state.col === i ? !state.asc : true;
+            state.col = i;
+            thead.querySelectorAll("th").forEach((h, j) => {
+              h.classList.remove("sort-asc", "sort-desc");
+              if (j === i) h.classList.add(state.asc ? "sort-asc" : "sort-desc");
+            });
+            document.getElementById(tbodyId).innerHTML = "";
+            renderFn(sortedFeatures(renderFn.features, sortKeys[i], state.asc));
+          });
+        });
+      }
+
       function buildCouncilTable(features) {
         const n = features.length;
         document.getElementById("cnt-council").textContent = n;
         document.getElementById("tab-cnt-council").textContent = `(${n})`;
+        renderCouncilRows(features);
+        renderCouncilRows.features = features;
+        makeSortable("panel-council", "tbody-council", COUNCIL_SORT_KEYS, renderCouncilRows);
+      }
+
+      function renderCouncilRows(features) {
         features.forEach((f) => {
           const p = f.properties;
           appendRow(
@@ -216,6 +295,12 @@
         const n = features.length;
         document.getElementById("cnt-osm").textContent = n;
         document.getElementById("tab-cnt-osm").textContent = `(${n})`;
+        renderOsmRows(features);
+        renderOsmRows.features = features;
+        makeSortable("panel-osm", "tbody-osm", OSM_SORT_KEYS, renderOsmRows);
+      }
+
+      function renderOsmRows(features) {
         features.forEach((f) => {
           const p = f.properties;
           const link = p.osm_url
@@ -240,6 +325,12 @@
         const n = features.length;
         document.getElementById("cnt-matched").textContent = n;
         document.getElementById("tab-cnt-matched").textContent = `(${n})`;
+        renderMatchedRows(features);
+        renderMatchedRows.features = features;
+        makeSortable("panel-matched", "tbody-matched", MATCHED_SORT_KEYS, renderMatchedRows);
+      }
+
+      function renderMatchedRows(features) {
         features.forEach((f) => {
           const p = f.properties;
           const link = p.osm_url
@@ -255,12 +346,16 @@
                   ? `<span class="diff-neg">${cdiff}</span>`
                   : "0";
           const cov = p.covered_disagrees ? "warn-cell" : "";
+          const method = p.match_method === "ref:GB:cec"
+            ? `<span class="match-cec-ref">ref:GB:cec</span>`
+            : "proximity";
           appendRow(
             "tbody-matched",
             [
               v(p.council_id),
               link,
               v(p.match_dist_m),
+              method,
               v(p.council_capacity),
               v(p.osm_capacity),
               diff,
